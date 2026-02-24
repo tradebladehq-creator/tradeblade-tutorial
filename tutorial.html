@@ -1542,7 +1542,7 @@ const TradeAudio = {
   _queue: [],
   _playing: false,
   _current: null,
-  _muted: (window.self !== window.top),  // mute when embedded in iframe
+  _muted: false,
   _currentPath: null,
   _currentCaller: null,
   _log: [],             // [{time, clip, caller, action}] — rolling debug log
