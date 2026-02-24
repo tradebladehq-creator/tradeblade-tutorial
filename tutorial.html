@@ -7221,10 +7221,6 @@ const Splash = {
           if(sfBtn) sfBtn.style.display = "none";
         }
         targetEl = document.getElementById("returningPrompt");
-      } else if(!GuidedTour.isDone()){
-        // Path C1: First-time user, tour not done → show first-time prompt
-        document.getElementById("firstTimePrompt").style.display = "flex";
-        targetEl = document.getElementById("firstTimePrompt");
       } else {
         // Path C2: Licensed + no saved config + tour done → land on topbar / home page
         landOnTopbar = true;
