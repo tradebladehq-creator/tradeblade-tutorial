@@ -3644,6 +3644,7 @@ const CardTour = {
     this._hlTimer = setTimeout(() => { this._hlTimer = null; this._highlight(step.sel); this._updateNav(); }, delay);
     if(step.clip) TradeAudio.enqueue('audio/' + step.clip + '.mp3');
     // ── Step-specific setup ──
+    if(step.id === 'manual_btn') this._setupManualBtnStep();
     if(step.id === 'tpsl') this._setupTpslGearListener();
     if(step.id === 'tpsl_edit') this._setupTpslEditStep();
     if(step.id === 'sim_entry' || step.id === 'flatten') this._setupFlattenStep();
@@ -3654,6 +3655,7 @@ const CardTour = {
   },
 
   _cleanupStepHandlers(){
+    if(this._manualBtnClickHandler){ document.removeEventListener('click', this._manualBtnClickHandler, true); this._manualBtnClickHandler = null; }
     if(this._tpslGearClickHandler){ document.removeEventListener('click', this._tpslGearClickHandler, true); this._tpslGearClickHandler = null; }
     if(this._tpslEditClickHandler){ document.removeEventListener('click', this._tpslEditClickHandler, true); this._tpslEditClickHandler = null; }
     if(this._tpslEditorPoller){ clearInterval(this._tpslEditorPoller); this._tpslEditorPoller = null; }
@@ -3665,6 +3667,20 @@ const CardTour = {
     if(this._tradeChartClickHandler){ document.removeEventListener('click', this._tradeChartClickHandler, true); this._tradeChartClickHandler = null; }
     if(this._tradeChartCloseHandler){ document.removeEventListener('click', this._tradeChartCloseHandler, true); this._tradeChartCloseHandler = null; }
     if(this._removeClickHandler){ document.removeEventListener('click', this._removeClickHandler, true); this._removeClickHandler = null; }
+  },
+
+  // ── Manual button: after clip drains, wait for user to click Manual button → advance to place_levels ──
+  _setupManualBtnStep(){
+    const placeLevelsIdx = this.STEPS.findIndex(s => s.id === 'place_levels');
+    if(placeLevelsIdx < 0) return;
+    this._manualBtnClickHandler = (e) => {
+      if(!e.target.closest('.tagManual')) return;
+      document.removeEventListener('click', this._manualBtnClickHandler, true);
+      this._manualBtnClickHandler = null;
+      console.log('[CardTour] Manual button clicked — advancing to place_levels');
+      this._goto(placeLevelsIdx);
+    };
+    document.addEventListener('click', this._manualBtnClickHandler, true);
   },
 
   // ── TP/SL gear listener: after tpsl clip drains, wait for gear click → advance to tpsl_edit ──
@@ -3930,7 +3946,7 @@ const CardTour = {
     const step = this.STEPS[this._step];
     if(!step) return;
     // Steps that wait for user action — don't auto-advance
-    const waitSteps = ['place_levels', 'tpsl_edit', 'trade_chart', 'trade_chart_view', 'flatten', 'ev', 'remove'];
+    const waitSteps = ['manual_btn', 'place_levels', 'tpsl_edit', 'trade_chart', 'trade_chart_view', 'flatten', 'ev', 'remove'];
     if(waitSteps.includes(step.id)) return;
     // tpsl: clip finished — switch highlight to gear icon (listener already active from _goto)
     if(step.id === 'tpsl'){
