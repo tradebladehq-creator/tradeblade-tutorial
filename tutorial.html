@@ -7006,7 +7006,7 @@ const Pair = {
   openEVAnalysis(id){
     const p = PAIRS.find(x=>x.id===id);
     if(!p) return;
-    const w = window.open("https://tradebladehq.com/math.html", "ev_analysis_"+id, "width=900,height=900,scrollbars=yes,resizable=yes");
+    const w = window.open("ev-analysis.html", "ev_analysis_"+id, "width=900,height=900,scrollbars=yes,resizable=yes");
     if(!w) { alert("Please allow popups for this page."); return; }
     // Build init payload: merge DEFAULTS → seeded → any prior popup overrides.
     // Include pairId so popup can tag updates back to this card.
