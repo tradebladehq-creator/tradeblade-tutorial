@@ -247,6 +247,7 @@ function HedgeAnalysis() {
   // --- Instrument & Account Type ---
   const [instrument, setInstrument] = useState("ES/MES");
   const [accountType, setAccountType] = useState("2-step");
+  const [drawdownType, setDrawdownType] = useState("trailing"); // "trailing" or "eod"
 
   // --- Adjustable Parameters ---
   const [passRate, setPassRate] = useState(10);
@@ -310,6 +311,7 @@ function HedgeAnalysis() {
       if (p.stfCost != null) setStfCost(p.stfCost);
       if (p.stfPayoutRate != null) setStfPayoutRate(p.stfPayoutRate);
       if (p.stfHedgeContracts != null) setStfHedgeContracts(p.stfHedgeContracts);
+      if (p.drawdownType) setDrawdownType(p.drawdownType);
 
       // TP/SL from card drive propTP and rrRatio (read-only in popup)
       if (p._tpDollars > 0) setPropTP(p._tpDollars);
@@ -330,31 +332,40 @@ function HedgeAnalysis() {
   // ============================================================
   // Popup → CC: send TB_EV_UPDATE whenever account-level params change.
   // Does NOT send TP/SL/R:R (those are read-only from the card).
-  // Uses BroadcastChannel as sole transport (WebView2 safe).
+  // Sends via BroadcastChannel + window.opener.postMessage fallback
+  // so CC always receives updates even when BroadcastChannel is isolated.
+  // Includes avgPeakFail so both pipelines use the same MC result.
   // ============================================================
   useEffect(() => {
     if (!_pairId || _suppressUpdate.current) return;
-    if (!_channel.current) return;
-    try {
-      _channel.current.postMessage({
-        type: "TB_EV_UPDATE",
-        pairId: _pairId,
-        params: {
-          instrument, accountType, passRate, payoutRate, friction,
-          evalHedgeContracts, paHedgeContracts,
-          evalCost, paCost, profitTarget, trailingDD, payoutAmt, payoutThreshold,
-          stfCost, stfPayoutRate, stfHedgeContracts,
-        }
-      });
-    } catch(e) {}
-  }, [_pairId, instrument, accountType, passRate, payoutRate, friction,
+    const msg = {
+      type: "TB_EV_UPDATE",
+      pairId: _pairId,
+      params: {
+        instrument, accountType, drawdownType, passRate, payoutRate, friction,
+        evalHedgeContracts, paHedgeContracts,
+        evalCost, paCost, profitTarget, trailingDD, payoutAmt, payoutThreshold,
+        stfCost, stfPayoutRate, stfHedgeContracts,
+        avgPeakFail: effectivePeakFail,
+      }
+    };
+    try { if (_channel.current) _channel.current.postMessage(msg); } catch(e) {}
+    try { if (window.opener) window.opener.postMessage(msg, "*"); } catch(e) {}
+  }, [_pairId, instrument, accountType, drawdownType, passRate, payoutRate, friction,
       evalHedgeContracts, paHedgeContracts, evalCost, paCost, profitTarget,
-      trailingDD, payoutAmt, payoutThreshold, stfCost, stfPayoutRate, stfHedgeContracts]);
+      trailingDD, payoutAmt, payoutThreshold, stfCost, stfPayoutRate, stfHedgeContracts,
+      effectivePeakFail]);
 
   // Handle instrument change — update friction default
   const handleInstrumentChange = (newInst) => {
     setInstrument(newInst);
     setFriction((INSTRUMENTS[normalizePairKey(newInst)] || INSTRUMENTS["ES/MES"]).defaultFriction);
+  };
+
+  // Handle drawdown type change — update DD default
+  const handleDrawdownTypeChange = (type) => {
+    setDrawdownType(type);
+    setTrailingDD(type === "eod" ? 2000 : 2500);
   };
 
   // Derived values
@@ -415,7 +426,9 @@ function HedgeAnalysis() {
     return () => clearTimeout(mcTimer.current);
   }, [propTP, rrRatio, inst.fullTickVal]);
 
-  const effectivePeakFail = avgPeakSimulated;
+  // EOD: full drawdown is deterministically capturable (peak = 0)
+  // Trailing: MC-simulated peak reduces capturable amount
+  const effectivePeakFail = drawdownType === "eod" ? 0 : avgPeakSimulated;
 
   // ============================================================
   // MC2: Avg Trades Per Cycle (full cycle simulation)
@@ -693,6 +706,11 @@ function HedgeAnalysis() {
               { value: "2-step", label: "2-Step Eval" },
               { value: "straight-to-funded", label: "Straight to Funded" },
             ]} />
+          <Toggle value={drawdownType} onChange={handleDrawdownTypeChange} accent={C.amber}
+            options={[
+              { value: "trailing", label: "Trailing DD" },
+              { value: "eod", label: "EOD DD" },
+            ]} />
         </div>
       </div>
 
@@ -758,9 +776,11 @@ function HedgeAnalysis() {
               <Param label="Eval Profit Target" value={profitTarget} onChange={setProfitTarget}
                 min={1000} max={10000} step={100} fmt={v => `$${v.toLocaleString()}`}
                 sub="Must hit to pass eval (Apex 50k: $3,000)" />
-              <Param label="Trailing Drawdown" value={trailingDD} onChange={setTrailingDD}
+              <Param label={drawdownType === "eod" ? "EOD Drawdown" : "Trailing Drawdown"} value={trailingDD} onChange={setTrailingDD}
                 min={1000} max={5000} step={100} fmt={v => `$${v.toLocaleString()}`}
-                sub="Account killed when DD breached (Apex 50k: $2,500)" />
+                sub={drawdownType === "eod"
+                  ? "EOD drawdown: moves at end of day only (Apex 50k EOD: $2,000 · Daily loss limit: $1,000)"
+                  : "Trailing drawdown: moves tick-by-tick intraday (Apex 50k: $2,500)"} />
               <Param label="Payout Amount" value={payoutAmt} onChange={setPayoutAmt}
                 min={500} max={10000} step={100} fmt={v => `$${v.toLocaleString()}`}
                 sub="Cash received per successful payout cycle" />
@@ -779,9 +799,11 @@ function HedgeAnalysis() {
               <Param label="Profit Target" value={profitTarget} onChange={setProfitTarget}
                 min={1000} max={10000} step={100} fmt={v => `$${v.toLocaleString()}`}
                 sub="Target to reach payout eligibility" />
-              <Param label="Trailing Drawdown" value={trailingDD} onChange={setTrailingDD}
+              <Param label={drawdownType === "eod" ? "EOD Drawdown" : "Trailing Drawdown"} value={trailingDD} onChange={setTrailingDD}
                 min={1000} max={5000} step={100} fmt={v => `$${v.toLocaleString()}`}
-                sub="Account killed when DD breached" />
+                sub={drawdownType === "eod"
+                  ? "EOD drawdown: moves at end of day only (Daily loss limit: $1,000)"
+                  : "Trailing drawdown: moves tick-by-tick intraday"} />
               <Param label="Amount Needed to Reach Payout" value={payoutThreshold} onChange={setPayoutThreshold}
                 min={1000} max={15000} step={100} fmt={v => `$${v.toLocaleString()}`}
                 sub="Total funded P/L to unlock payout (25k: ~$1,500 · 50k: ~$2,600 · 150k: ~$5,000 · 300k: ~$9,000)" />
